@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Home Energy Optimizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #0f1419;
+            color: #e8eaed;
+            padding: 20px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { margin-bottom: 30px; font-size: 32px; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: #1a1f29;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #2d3748;
+        }
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #10b981;
+            margin: 10px 0;
+        }
+        .stat-label {
+            color: #9ca3af;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .chart-container {
+            background: #1a1f29;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border: 1px solid #2d3748;
+        }
+        .chart-title {
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: #e8eaed;
+        }
+        .recommendations {
+            background: #1a1f29;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid #2d3748;
+        }
+        .rec-item {
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #0f1419;
+            border-radius: 6px;
+            border-left: 3px solid #10b981;
+        }
+        .rec-hour { font-weight: bold; color: #60a5fa; }
+        .rec-action { color: #10b981; margin: 5px 0; }
+        .rec-reason { color: #9ca3af; font-size: 14px; }
+        canvas { max-height: 400px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔋 Home Energy Management System</h1>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Grid Independence</div>
+                <div class="stat-value" id="independence">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Annual Savings</div>
+                <div class="stat-value" id="savings">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Solar Generated</div>
+                <div class="stat-value" id="solar">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Grid Import Reduced</div>
+                <div class="stat-value" id="reduction">--</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-title">Energy Flow (Last 24 Hours)</div>
+            <canvas id="energyChart"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-title">Cost Comparison</div>
+            <canvas id="costChart"></canvas>
+        </div>
+
+        <div class="recommendations">
+            <div class="chart-title">Optimization Recommendations (Next 24 Hours)</div>
+            <div id="recList"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api/energy';
+
+        // Fetch and display stats
+        async function loadStats() {
+            const stats = await fetch(`${API_BASE}/stats`).then(r => r.json());
+            document.getElementById('independence').textContent = stats.grid_independence + '%';
+            document.getElementById('solar').textContent = stats.total_solar.toFixed(1) + ' kWh';
+            
+            const reduction = ((1 - stats.total_grid_import / stats.total_consumption) * 100).toFixed(1);
+            document.getElementById('reduction').textContent = reduction + '%';
+        }
+
+        // Fetch and display cost analysis
+        async function loadCostAnalysis() {
+            const cost = await fetch(`${API_BASE}/cost-analysis`).then(r => r.json());
+            document.getElementById('savings').textContent = '$' + cost.annual_projection.toFixed(0);
+            
+            // Cost comparison chart
+            const ctx = document.getElementById('costChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Grid Only', 'With Battery System'],
+                    datasets: [{
+                        label: 'Weekly Cost ($)',
+                        data: [cost.grid_only_cost, cost.with_battery_cost],
+                        backgroundColor: ['#ef4444', '#10b981']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#9ca3af' },
+                            grid: { color: '#2d3748' }
+                        },
+                        x: {
+                            ticks: { color: '#9ca3af' },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Fetch and display hourly data
+        async function loadEnergyChart() {
+            const data = await fetch(`${API_BASE}/hourly?start_date=2025-11-12&end_date=2025-11-12`).then(r => r.json());
+            
+            const labels = data.map(d => new Date(d.timestamp).getHours() + ':00');
+            const solar = data.map(d => d.solar_generation_kw);
+            const consumption = data.map(d => d.home_consumption_kw);
+            const battery = data.map(d => d.battery_state_kwh);
+            
+            const ctx = document.getElementById('energyChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Solar Generation',
+                            data: solar,
+                            borderColor: '#fbbf24',
+                            backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                            fill: true
+                        },
+                        {
+                            label: 'Home Consumption',
+                            data: consumption,
+                            borderColor: '#60a5fa',
+                            backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                            fill: true
+                        },
+                        {
+                            label: 'Battery State',
+                            data: battery,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Power (kW)', color: '#9ca3af' },
+                            ticks: { color: '#9ca3af' },
+                            grid: { color: '#2d3748' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Battery (kWh)', color: '#9ca3af' },
+                            ticks: { color: '#9ca3af' },
+                            grid: { display: false }
+                        },
+                        x: {
+                            ticks: { color: '#9ca3af' },
+                            grid: { color: '#2d3748' }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#9ca3af' } }
+                    }
+                }
+            });
+        }
+
+        // Fetch and display recommendations
+        async function loadRecommendations() {
+            const data = await fetch(`${API_BASE}/recommendations`).then(r => r.json());
+            const recList = document.getElementById('recList');
+            
+            // Show key recommendations only (peak hours + off-peak)
+            const keyRecs = data.recommendations.filter(r => 
+                r.action !== 'hold' || r.hour % 6 === 0
+            ).slice(0, 8);
+            
+            recList.innerHTML = keyRecs.map(rec => `
+                <div class="rec-item">
+                    <div class="rec-hour">Hour ${rec.hour}:00 (Rate: $${rec.rate}/kWh)</div>
+                    <div class="rec-action">${rec.action.replace(/_/g, ' ').toUpperCase()}</div>
+                    <div class="rec-reason">${rec.reason}</div>
+                </div>
+            `).join('');
+        }
+
+        // Load all data
+        loadStats();
+        loadCostAnalysis();
+        loadEnergyChart();
+        loadRecommendations();
+    </script>
+</body>
+</html>
