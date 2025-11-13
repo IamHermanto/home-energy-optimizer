@@ -135,6 +135,22 @@ def generate_week_data(start_date, num_days=7):
     
     return pd.concat(all_data, ignore_index=True)
 
+def save_to_database(df, database_url='sqlite:///data/energy_data.db'):
+    """Save energy data to database"""
+    if database_url.startswith('postgresql://'):
+        from sqlalchemy import create_engine
+        engine = create_engine(database_url)
+        df.to_sql('energy_readings', engine, if_exists='append', index=False)
+        print(f"Saved {len(df)} records to PostgreSQL")
+    else:
+        import sqlite3
+        import os
+        os.makedirs('data', exist_ok=True)
+        conn = sqlite3.connect('data/energy_data.db')
+        df.to_sql('energy_readings', conn, if_exists='append', index=False)
+        conn.close()
+        print(f"Saved {len(df)} records to SQLite")
+
 if __name__ == "__main__":
     # Generate a week of data
     start_date = datetime.now().date() - timedelta(days=7)
