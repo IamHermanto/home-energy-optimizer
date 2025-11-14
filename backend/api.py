@@ -9,7 +9,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Database configuration
-DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///data/energy_data.db')
+DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:////tmp/energy_data.db')
 
 # If using PostgreSQL from Render, fix the URL format
 if DATABASE_URL.startswith('postgres://'):
@@ -32,7 +32,7 @@ def get_db_connection():
         return conn
     else:
         import sqlite3
-        conn = sqlite3.connect('data/energy_data.db')
+        conn = sqlite3.connect('/tmp/energy_data.db')
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -229,7 +229,7 @@ def cost_analysis():
         conn.close()
     else:
         import sqlite3
-        conn = sqlite3.connect('data/energy_data.db')
+        conn = sqlite3.connect('/tmp/energy_data.db')
         df = pd.read_sql_query('SELECT * FROM energy_readings', conn)
         conn.close()
     
@@ -250,7 +250,7 @@ def recommendations():
         conn.close()
     else:
         import sqlite3
-        conn = sqlite3.connect('data/energy_data.db')
+        conn = sqlite3.connect('/tmp/energy_data.db')
         df = pd.read_sql_query('SELECT * FROM energy_readings ORDER BY timestamp DESC LIMIT 24', conn)
         conn.close()
     
