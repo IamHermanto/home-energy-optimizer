@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 import os
 import pandas as pd
 from backend.optimizer import EnergyOptimizer
-from backend.energy_simulator import generate_week_data, save_to_database
 
 app = Flask(__name__)
 CORS(app)
@@ -62,7 +61,7 @@ def init_db():
         
         if result and result['count'] == 0:
             print("Database empty, generating sample data...")
-            from energy_simulator import generate_week_data, save_to_database
+            from backend.energy_simulator import generate_week_data, save_to_database
             start_date = datetime.now().date() - timedelta(days=7)
             week_data = generate_week_data(start_date, num_days=7)
             save_to_database(week_data, DATABASE_URL)
@@ -72,7 +71,7 @@ def init_db():
         # Create table if it doesn't exist
         create_table()
         # Generate initial data
-        from energy_simulator import generate_week_data, save_to_database
+        from backend.energy_simulator import generate_week_data, save_to_database
         start_date = datetime.now().date() - timedelta(days=7)
         week_data = generate_week_data(start_date, num_days=7)
         save_to_database(week_data, DATABASE_URL)
