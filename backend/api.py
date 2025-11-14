@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import os
 import pandas as pd
 from backend.optimizer import EnergyOptimizer
+from backend.energy_simulator import generate_week_data, save_to_database
 
 app = Flask(__name__)
 CORS(app)
