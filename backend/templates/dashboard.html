@@ -43,6 +43,8 @@
             border-radius: 8px;
             margin-bottom: 30px;
             border: 1px solid #2d3748;
+            position: relative;
+            min-height: 400px;
         }
         .chart-title {
             font-size: 20px;
@@ -66,11 +68,51 @@
         .rec-action { color: #10b981; margin: 5px 0; }
         .rec-reason { color: #9ca3af; font-size: 14px; }
         canvas { max-height: 400px; }
+        
+        /* Loading spinner */
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+        }
+        .loading.active {
+            display: block;
+        }
+        .spinner {
+            border: 3px solid #2d3748;
+            border-top: 3px solid #10b981;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Error message */
+        .error-message {
+            background: #7f1d1d;
+            border: 1px solid #991b1b;
+            color: #fca5a5;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .error-message.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🔋 Home Energy Management System</h1>
+        
+        <div class="error-message" id="errorMsg"></div>
         
         <div class="stats-grid">
             <div class="stat-card">
@@ -93,75 +135,145 @@
 
         <div class="chart-container">
             <div class="chart-title">Energy Flow (Last 24 Hours)</div>
+            <div class="loading" id="energyLoading">
+                <div class="spinner"></div>
+            </div>
             <canvas id="energyChart"></canvas>
         </div>
 
         <div class="chart-container">
             <div class="chart-title">Cost Comparison</div>
+            <div class="loading" id="costLoading">
+                <div class="spinner"></div>
+            </div>
             <canvas id="costChart"></canvas>
         </div>
 
         <div class="recommendations">
             <div class="chart-title">Optimization Recommendations (Next 24 Hours)</div>
-            <div id="recList"></div>
+            <div id="recList">Loading recommendations...</div>
         </div>
     </div>
 
     <script>
-        const API_BASE = '/api/energy';  // Use relative path
+        const API_BASE = '/api/energy';
+
+        // Error handling wrapper
+        async function fetchWithErrorHandling(url, errorElement = 'errorMsg') {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Fetch error:', error);
+                const errorMsg = document.getElementById(errorElement);
+                errorMsg.textContent = `Failed to load data: ${error.message}. Retrying...`;
+                errorMsg.classList.add('active');
+                
+                // Retry after 2 seconds
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                const response = await fetch(url);
+                return await response.json();
+            }
+        }
 
         // Fetch and display stats
         async function loadStats() {
-            const stats = await fetch(`${API_BASE}/stats`).then(r => r.json());
-            document.getElementById('independence').textContent = stats.grid_independence + '%';
-            document.getElementById('solar').textContent = stats.total_solar.toFixed(1) + ' kWh';
-            
-            const reduction = ((1 - stats.total_grid_import / stats.total_consumption) * 100).toFixed(1);
-            document.getElementById('reduction').textContent = reduction + '%';
+            try {
+                const stats = await fetchWithErrorHandling(`${API_BASE}/stats`);
+                document.getElementById('independence').textContent = stats.grid_independence + '%';
+                document.getElementById('solar').textContent = stats.total_solar.toFixed(1) + ' kWh';
+                
+                const reduction = ((1 - stats.total_grid_import / stats.total_consumption) * 100).toFixed(1);
+                document.getElementById('reduction').textContent = reduction + '%';
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
         }
 
         // Fetch and display cost analysis
         async function loadCostAnalysis() {
-            const cost = await fetch(`${API_BASE}/cost-analysis`).then(r => r.json());
-            document.getElementById('savings').textContent = '$' + cost.annual_projection.toFixed(0);
+            const loading = document.getElementById('costLoading');
+            loading.classList.add('active');
             
-            // Cost comparison chart
-            const ctx = document.getElementById('costChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['Grid Only', 'With Battery System'],
-                    datasets: [{
-                        label: 'Weekly Cost ($)',
-                        data: [cost.grid_only_cost, cost.with_battery_cost],
-                        backgroundColor: ['#ef4444', '#10b981']
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false }
+            try {
+                const cost = await fetchWithErrorHandling(`${API_BASE}/cost-analysis`);
+                document.getElementById('savings').textContent = '$' + cost.annual_projection.toFixed(0);
+                
+                // Cost comparison chart
+                const ctx = document.getElementById('costChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Grid Only', 'With Battery System'],
+                        datasets: [{
+                            label: 'Weekly Cost ($)',
+                            data: [cost.grid_only_cost, cost.with_battery_cost],
+                            backgroundColor: ['#ef4444', '#10b981']
+                        }]
                     },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: { color: '#9ca3af' },
-                            grid: { color: '#2d3748' }
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
                         },
-                        x: {
-                            ticks: { color: '#9ca3af' },
-                            grid: { display: false }
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { color: '#9ca3af' },
+                                grid: { color: '#2d3748' }
+                            },
+                            x: {
+                                ticks: { color: '#9ca3af' },
+                                grid: { display: false }
+                            }
                         }
                     }
-                }
-            });
+                });
+            } finally {
+                loading.classList.remove('active');
+            }
         }
 
-        // Fetch and display hourly data
+        // Fetch and display hourly data - FIXED: Dynamic date
         async function loadEnergyChart() {
-            const data = await fetch(`${API_BASE}/hourly?start_date=2025-11-12&end_date=2025-11-12`).then(r => r.json());
+            const loading = document.getElementById('energyLoading');
+            loading.classList.add('active');
             
+            try {
+                // Get yesterday's date for most recent complete 24h data
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const dateStr = yesterday.toISOString().split('T')[0];
+                
+                const data = await fetchWithErrorHandling(
+                    `${API_BASE}/hourly?start_date=${dateStr}&end_date=${dateStr}`
+                );
+                
+                if (!data || data.length === 0) {
+                    // If no data for yesterday, try today
+                    const today = new Date().toISOString().split('T')[0];
+                    const todayData = await fetchWithErrorHandling(
+                        `${API_BASE}/hourly?start_date=${today}&end_date=${today}`
+                    );
+                    
+                    if (todayData && todayData.length > 0) {
+                        renderEnergyChart(todayData);
+                    } else {
+                        throw new Error('No data available for recent dates');
+                    }
+                } else {
+                    renderEnergyChart(data);
+                }
+            } finally {
+                loading.classList.remove('active');
+            }
+        }
+
+        function renderEnergyChart(data) {
             const labels = data.map(d => new Date(d.timestamp).getHours() + ':00');
             const solar = data.map(d => d.solar_generation_kw);
             const consumption = data.map(d => d.home_consumption_kw);
@@ -232,28 +344,34 @@
 
         // Fetch and display recommendations
         async function loadRecommendations() {
-            const data = await fetch(`${API_BASE}/recommendations`).then(r => r.json());
-            const recList = document.getElementById('recList');
-            
-            // Show key recommendations only (peak hours + off-peak)
-            const keyRecs = data.recommendations.filter(r => 
-                r.action !== 'hold' || r.hour % 6 === 0
-            ).slice(0, 8);
-            
-            recList.innerHTML = keyRecs.map(rec => `
-                <div class="rec-item">
-                    <div class="rec-hour">Hour ${rec.hour}:00 (Rate: $${rec.rate}/kWh)</div>
-                    <div class="rec-action">${rec.action.replace(/_/g, ' ').toUpperCase()}</div>
-                    <div class="rec-reason">${rec.reason}</div>
-                </div>
-            `).join('');
+            try {
+                const data = await fetchWithErrorHandling(`${API_BASE}/recommendations`);
+                const recList = document.getElementById('recList');
+                
+                // Show key recommendations only (peak hours + off-peak)
+                const keyRecs = data.recommendations.filter(r => 
+                    r.action !== 'hold' || r.hour % 6 === 0
+                ).slice(0, 8);
+                
+                recList.innerHTML = keyRecs.map(rec => `
+                    <div class="rec-item">
+                        <div class="rec-hour">Hour ${rec.hour}:00 (Rate: $${rec.rate}/kWh)</div>
+                        <div class="rec-action">${rec.action.replace(/_/g, ' ').toUpperCase()}</div>
+                        <div class="rec-reason">${rec.reason}</div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('recList').textContent = 'Failed to load recommendations';
+            }
         }
 
-        // Load all data
-        loadStats();
-        loadCostAnalysis();
-        loadEnergyChart();
-        loadRecommendations();
+        // Load all data on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadCostAnalysis();
+            loadEnergyChart();
+            loadRecommendations();
+        });
     </script>
 </body>
 </html>
