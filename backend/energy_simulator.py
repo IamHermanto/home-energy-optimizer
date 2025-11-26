@@ -2,6 +2,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 import sqlite3
+import os
 
 def generate_solar_data(date, panel_capacity_kw=5.0):
     """Generate 24 hours of solar generation data"""
@@ -123,11 +124,19 @@ def save_to_database(df, database_url='sqlite:////tmp/energy_data.db'):
         df.to_sql('energy_readings', engine, if_exists='append', index=False)
         print(f"Saved {len(df)} records to PostgreSQL")
     else:
-        import sqlite3
-        conn = sqlite3.connect('/tmp/energy_data.db')
+        # Extract the actual path from sqlite:///path format
+        db_path = database_url.replace('sqlite:///', '')
+        
+        # Ensure directory exists
+        db_dir = os.path.dirname(db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+        
+        print(f"Saving to: {db_path}")
+        conn = sqlite3.connect(db_path)
         df.to_sql('energy_readings', conn, if_exists='append', index=False)
         conn.close()
-        print(f"Saved {len(df)} records to SQLite")
+        print(f"Saved {len(df)} records to SQLite at {db_path}")
     
 def generate_week_data(start_date, num_days=7):
     """Generate data for multiple days"""
@@ -143,12 +152,20 @@ def generate_week_data(start_date, num_days=7):
     return pd.concat(all_data, ignore_index=True)
 
 if __name__ == "__main__":
+    # Determine correct database path based on OS
+    if os.name == 'nt':  # Windows
+        db_path = os.path.join(os.path.dirname(__file__), 'energy_data.db')
+    else:  # Linux/Unix
+        db_path = '/tmp/energy_data.db'
+    
+    database_url = f'sqlite:///{db_path}'
+    
     # Generate a week of data
     start_date = datetime.now().date() - timedelta(days=7)
     week_data = generate_week_data(start_date, num_days=7)
     
     # Save to database
-    save_to_database(week_data, 'sqlite:////tmp/energy_data.db')
+    save_to_database(week_data, database_url)
     
     print(f"Generated {len(week_data)} hours of data")
     print(f"\nWeekly totals:")

@@ -76,6 +76,7 @@
             left: 50%;
             transform: translate(-50%, -50%);
             display: none;
+            text-align: center;
         }
         .loading.active {
             display: block;
@@ -87,10 +88,25 @@
             width: 40px;
             height: 40px;
             animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+        .loading-text {
+            color: #9ca3af;
+            font-size: 14px;
+        }
+        
+        /* Info message */
+        .info-message {
+            background: #1e3a5f;
+            border: 1px solid #2563eb;
+            color: #93c5fd;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
         }
         
         /* Error message */
@@ -112,7 +128,18 @@
     <div class="container">
         <h1>🔋 Home Energy Management System</h1>
         
+        <div class="info-message">
+            <strong>Note:</strong> Demo data is being generated. Initial load may take a few seconds.
+            <button onclick="forceRegenerate()" style="margin-left: 20px; padding: 5px 15px; background: #2563eb; border: none; color: white; border-radius: 4px; cursor: pointer;">
+                Force Regenerate Data
+            </button>
+            <button onclick="checkStatus()" style="margin-left: 10px; padding: 5px 15px; background: #059669; border: none; color: white; border-radius: 4px; cursor: pointer;">
+                Check Status
+            </button>
+        </div>
+        
         <div class="error-message" id="errorMsg"></div>
+        <div class="info-message" id="debugInfo" style="display: none;"></div>
         
         <div class="stats-grid">
             <div class="stat-card">
@@ -135,16 +162,18 @@
 
         <div class="chart-container">
             <div class="chart-title">Energy Flow (Last 24 Hours)</div>
-            <div class="loading" id="energyLoading">
+            <div class="loading active" id="energyLoading">
                 <div class="spinner"></div>
+                <div class="loading-text">Loading energy data...</div>
             </div>
             <canvas id="energyChart"></canvas>
         </div>
 
         <div class="chart-container">
             <div class="chart-title">Cost Comparison</div>
-            <div class="loading" id="costLoading">
+            <div class="loading active" id="costLoading">
                 <div class="spinner"></div>
+                <div class="loading-text">Calculating costs...</div>
             </div>
             <canvas id="costChart"></canvas>
         </div>
@@ -157,49 +186,112 @@
 
     <script>
         const API_BASE = '/api/energy';
+        let retryCount = 0;
+        const MAX_RETRIES = 5;
 
-        // Error handling wrapper
-        async function fetchWithErrorHandling(url, errorElement = 'errorMsg') {
+        // Debug functions
+        async function forceRegenerate() {
+            const debugInfo = document.getElementById('debugInfo');
+            debugInfo.textContent = 'Regenerating data... This may take 10-15 seconds...';
+            debugInfo.style.display = 'block';
+            
             try {
+                const response = await fetch('/api/debug/regenerate', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    debugInfo.textContent = `Success! Generated ${data.count} records. Reloading page...`;
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    debugInfo.textContent = `Error: ${data.error}`;
+                }
+            } catch (error) {
+                debugInfo.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function checkStatus() {
+            const debugInfo = document.getElementById('debugInfo');
+            debugInfo.style.display = 'block';
+            debugInfo.textContent = 'Checking database status...';
+            
+            try {
+                const response = await fetch('/api/debug/status');
+                const data = await response.json();
+                
+                if (data.error) {
+                    debugInfo.textContent = `Database Error: ${data.error}`;
+                } else {
+                    debugInfo.textContent = `Database has ${data.record_count} records. Date range: ${data.date_range.min} to ${data.date_range.max}. Using: ${data.database_url}`;
+                }
+            } catch (error) {
+                debugInfo.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        // Error handling wrapper with retry
+        async function fetchWithRetry(url, attempt = 1) {
+            try {
+                console.log(`Fetching ${url} (attempt ${attempt}/${MAX_RETRIES})`);
                 const response = await fetch(url);
                 if (!response.ok) {
                     throw new Error(`API error: ${response.status}`);
                 }
-                return await response.json();
-            } catch (error) {
-                console.error('Fetch error:', error);
-                const errorMsg = document.getElementById(errorElement);
-                errorMsg.textContent = `Failed to load data: ${error.message}. Retrying...`;
-                errorMsg.classList.add('active');
+                const data = await response.json();
                 
-                // Retry after 2 seconds
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                const response = await fetch(url);
-                return await response.json();
+                // Check if we got empty data
+                if (Array.isArray(data) && data.length === 0) {
+                    throw new Error('No data available');
+                }
+                
+                return data;
+            } catch (error) {
+                console.error(`Fetch error (attempt ${attempt}):`, error);
+                
+                if (attempt < MAX_RETRIES) {
+                    // Show retry message
+                    const errorMsg = document.getElementById('errorMsg');
+                    errorMsg.textContent = `Loading data... Attempt ${attempt}/${MAX_RETRIES}. Please wait.`;
+                    errorMsg.classList.add('active');
+                    
+                    // Wait before retry (exponential backoff)
+                    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    
+                    return fetchWithRetry(url, attempt + 1);
+                } else {
+                    throw new Error(`Failed after ${MAX_RETRIES} attempts: ${error.message}`);
+                }
             }
         }
 
         // Fetch and display stats
         async function loadStats() {
             try {
-                const stats = await fetchWithErrorHandling(`${API_BASE}/stats`);
+                const stats = await fetchWithRetry(`${API_BASE}/stats`);
                 document.getElementById('independence').textContent = stats.grid_independence + '%';
                 document.getElementById('solar').textContent = stats.total_solar.toFixed(1) + ' kWh';
                 
                 const reduction = ((1 - stats.total_grid_import / stats.total_consumption) * 100).toFixed(1);
                 document.getElementById('reduction').textContent = reduction + '%';
+                
+                // Clear error message on success
+                document.getElementById('errorMsg').classList.remove('active');
             } catch (error) {
                 console.error('Error loading stats:', error);
+                const errorMsg = document.getElementById('errorMsg');
+                errorMsg.textContent = 'Unable to load statistics. Please refresh the page.';
+                errorMsg.classList.add('active');
             }
         }
 
         // Fetch and display cost analysis
         async function loadCostAnalysis() {
             const loading = document.getElementById('costLoading');
-            loading.classList.add('active');
+            loading.querySelector('.loading-text').textContent = 'Calculating costs...';
             
             try {
-                const cost = await fetchWithErrorHandling(`${API_BASE}/cost-analysis`);
+                const cost = await fetchWithRetry(`${API_BASE}/cost-analysis`);
                 document.getElementById('savings').textContent = '$' + cost.annual_projection.toFixed(0);
                 
                 // Cost comparison chart
@@ -233,48 +325,40 @@
                         }
                     }
                 });
-            } finally {
+                
                 loading.classList.remove('active');
+            } catch (error) {
+                console.error('Error loading cost analysis:', error);
+                loading.querySelector('.loading-text').textContent = 'Failed to load cost data';
             }
         }
 
-        // Fetch and display hourly data - FIXED: Dynamic date
+        // Fetch and display hourly data
         async function loadEnergyChart() {
             const loading = document.getElementById('energyLoading');
-            loading.classList.add('active');
+            loading.querySelector('.loading-text').textContent = 'Loading energy data...';
             
             try {
-                // Get yesterday's date for most recent complete 24h data
-                const yesterday = new Date();
-                yesterday.setDate(yesterday.getDate() - 1);
-                const dateStr = yesterday.toISOString().split('T')[0];
-                
-                const data = await fetchWithErrorHandling(
-                    `${API_BASE}/hourly?start_date=${dateStr}&end_date=${dateStr}`
-                );
+                // Try to get recent data
+                const data = await fetchWithRetry(`${API_BASE}/hourly`);
                 
                 if (!data || data.length === 0) {
-                    // If no data for yesterday, try today
-                    const today = new Date().toISOString().split('T')[0];
-                    const todayData = await fetchWithErrorHandling(
-                        `${API_BASE}/hourly?start_date=${today}&end_date=${today}`
-                    );
-                    
-                    if (todayData && todayData.length > 0) {
-                        renderEnergyChart(todayData);
-                    } else {
-                        throw new Error('No data available for recent dates');
-                    }
-                } else {
-                    renderEnergyChart(data);
+                    throw new Error('No data available');
                 }
-            } finally {
+                
+                renderEnergyChart(data);
                 loading.classList.remove('active');
+            } catch (error) {
+                console.error('Error loading energy chart:', error);
+                loading.querySelector('.loading-text').textContent = 'Failed to load energy data';
             }
         }
 
         function renderEnergyChart(data) {
-            const labels = data.map(d => new Date(d.timestamp).getHours() + ':00');
+            const labels = data.map(d => {
+                const date = new Date(d.timestamp);
+                return date.getHours() + ':00';
+            });
             const solar = data.map(d => d.solar_generation_kw);
             const consumption = data.map(d => d.home_consumption_kw);
             const battery = data.map(d => d.battery_state_kwh);
@@ -345,7 +429,7 @@
         // Fetch and display recommendations
         async function loadRecommendations() {
             try {
-                const data = await fetchWithErrorHandling(`${API_BASE}/recommendations`);
+                const data = await fetchWithRetry(`${API_BASE}/recommendations`);
                 const recList = document.getElementById('recList');
                 
                 // Show key recommendations only (peak hours + off-peak)
@@ -361,16 +445,32 @@
                     </div>
                 `).join('');
             } catch (error) {
+                console.error('Error loading recommendations:', error);
                 document.getElementById('recList').textContent = 'Failed to load recommendations';
             }
         }
 
-        // Load all data on page load
-        document.addEventListener('DOMContentLoaded', () => {
-            loadStats();
-            loadCostAnalysis();
-            loadEnergyChart();
-            loadRecommendations();
+        // Load all data on page load with staggered timing
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('Starting data load...');
+            
+            // Load in sequence to avoid overwhelming the server during data generation
+            try {
+                await loadEnergyChart();
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                await loadCostAnalysis();
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                await loadStats();
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                await loadRecommendations();
+                
+                console.log('All data loaded successfully');
+            } catch (error) {
+                console.error('Error during initial load:', error);
+            }
         });
     </script>
 </body>

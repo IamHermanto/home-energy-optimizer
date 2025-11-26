@@ -119,7 +119,7 @@ if __name__ == "__main__":
     import sqlite3
     
     # Load data from database
-    conn = sqlite3.connect('/tmp/energy_data.db')
+    conn = sqlite3.connect('energy_data.db')  # FIXED: Windows path
     df = pd.read_sql_query('SELECT * FROM energy_readings', conn)
     conn.close()
     
