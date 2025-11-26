@@ -402,8 +402,7 @@ _vpp_aggregator = None
 _autonomous_vpp = None
 
 # Demo speed multiplier (set via environment variable)
-DEMO_SPEED = int(os.environ.get('DEMO_SPEED', '30'))  # Default: 1x (realtime)
-# For demos: Set DEMO_SPEED=60 for 60x faster time
+DEMO_SPEED = int(os.environ.get('DEMO_SPEED', '30'))  # Default: 30x speed
 
 def get_vpp():
     """Get or initialize VPP aggregator"""

@@ -171,11 +171,6 @@
             text-align: center;
         }
         
-        .status-icon {
-            font-size: 32px;
-            margin-bottom: 8px;
-        }
-        
         .status-count {
             font-size: 28px;
             font-weight: 700;
@@ -247,8 +242,33 @@
             color: #fbbf24;
         }
         
-        .ev-status-icon {
-            font-size: 20px;
+        .ev-status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .status-offline {
+            background: rgba(156, 163, 175, 0.2);
+            color: #9ca3af;
+        }
+        
+        .status-v2g {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+        
+        .status-charging {
+            background: rgba(96, 165, 250, 0.2);
+            color: #60a5fa;
+        }
+        
+        .status-full {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
         }
         
         .ev-model {
@@ -417,6 +437,65 @@
             color: #10b981;
         }
         
+        /* Events Log */
+        .events-panel {
+            background: linear-gradient(135deg, #1a1f29 0%, #0f1419 100%);
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid #2d3748;
+        }
+        
+        .events-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .event-item {
+            padding: 14px;
+            background: rgba(15, 20, 25, 0.5);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 3px solid #fbbf24;
+            font-size: 13px;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        .event-item.new {
+            animation: highlightNew 1s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes highlightNew {
+            0% {
+                background: rgba(251, 191, 36, 0.2);
+                border-left-width: 5px;
+            }
+            100% {
+                background: rgba(15, 20, 25, 0.5);
+                border-left-width: 3px;
+            }
+        }
+        
+        .event-time {
+            color: #60a5fa;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .event-details {
+            color: #9ca3af;
+        }
+        
         /* Scrollbar */
         ::-webkit-scrollbar {
             width: 8px;
@@ -501,22 +580,18 @@
         <!-- EV Status Grid -->
         <div class="ev-status-grid">
             <div class="status-item">
-                <div class="status-icon">🔋</div>
                 <div class="status-count" id="chargingCount">--</div>
                 <div class="status-label">Charging</div>
             </div>
             <div class="status-item">
-                <div class="status-icon">✅</div>
                 <div class="status-count" id="fullCount">--</div>
                 <div class="status-label">Full</div>
             </div>
             <div class="status-item">
-                <div class="status-icon">⚡</div>
                 <div class="status-count" id="v2gReadyCount">--</div>
                 <div class="status-label">V2G Ready</div>
             </div>
             <div class="status-item">
-                <div class="status-icon">📴</div>
                 <div class="status-count" id="notConnectedCount">--</div>
                 <div class="status-label">Not Connected</div>
             </div>
@@ -545,7 +620,7 @@
                     </button>
                 </div>
 
-                <div class="result-box" id="v2gResult">Ready to dispatch V2G...</div>
+                <div class="result-box" id="v2gResult" style="display: none;"></div>
 
                 <div class="control-section" style="margin-top: 30px;">
                     <h3>Revenue Breakdown</h3>
@@ -568,6 +643,14 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Recent V2G Dispatch Events -->
+        <div class="events-panel" style="margin-bottom: 30px;">
+            <div style="font-size: 18px; font-weight: 700; margin-bottom: 20px; color: #e8eaed;">Recent V2G Dispatch Events</div>
+            <div class="events-list" id="eventsList">
+                <div style="color: #9ca3af; text-align: center; padding: 20px;">No events yet</div>
             </div>
         </div>
 
@@ -594,6 +677,7 @@
 
     <script>
         const API_BASE = '/api/ev';
+        let dispatchEvents = []; // Track dispatch events locally
 
         // Load fleet status
         async function loadFleetStatus() {
@@ -617,22 +701,28 @@
             }
         }
 
-        // Load all EVs
+        // Load all EVs - UPDATED with text status badges
         async function loadEVList() {
             try {
                 const evs = await fetch(`${API_BASE}/all`).then(r => r.json());
                 const list = document.getElementById('evList');
                 
                 list.innerHTML = evs.map(ev => {
-                    let statusIcon = '📴';
-                    if (ev.is_plugged_in) {
-                        if (ev.charge_percent >= 95) {
-                            statusIcon = '✅';
-                        } else if (ev.v2g_enabled) {
-                            statusIcon = '⚡';
-                        } else {
-                            statusIcon = '🔋';
-                        }
+                    let statusBadge = '';
+                    let statusClass = '';
+                    
+                    if (!ev.is_plugged_in) {
+                        statusBadge = 'Offline';
+                        statusClass = 'status-offline';
+                    } else if (ev.charge_percent >= 95) {
+                        statusBadge = 'Full';
+                        statusClass = 'status-full';
+                    } else if (ev.v2g_enabled) {
+                        statusBadge = 'V2G Ready';
+                        statusClass = 'status-v2g';
+                    } else {
+                        statusBadge = 'Charging';
+                        statusClass = 'status-charging';
                     }
                     
                     return `
@@ -642,7 +732,7 @@
                                     <div class="ev-owner">${ev.owner_name}</div>
                                     <div class="ev-model">${ev.model}</div>
                                 </div>
-                                <div class="ev-status-icon">${statusIcon}</div>
+                                <div class="ev-status-badge ${statusClass}">${statusBadge}</div>
                             </div>
                             <div class="charge-bar-container">
                                 <div class="charge-bar" style="width: ${ev.charge_percent}%"></div>
@@ -709,12 +799,32 @@
             }
         }
 
-        // Dispatch V2G
+        // Display events
+        function displayEvents() {
+            const list = document.getElementById('eventsList');
+            
+            if (dispatchEvents.length === 0) {
+                list.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 20px;">No events yet</div>';
+                return;
+            }
+            
+            list.innerHTML = dispatchEvents.map((event, index) => `
+                <div class="event-item ${index === 0 ? 'new' : ''}">
+                    <div class="event-time">${event.time}</div>
+                    <div class="event-details">
+                        ${event.evs_dispatched} EVs dispatched • ${event.power_kw.toFixed(1)} kW • $${event.revenue.toFixed(2)} revenue
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Dispatch V2G - FIXED to show result box and log events
         async function dispatchV2G() {
             const power = document.getElementById('v2gPower').value;
             const resultDiv = document.getElementById('v2gResult');
             
             try {
+                resultDiv.style.display = 'block';
                 resultDiv.textContent = 'Dispatching V2G...';
                 resultDiv.style.color = '#fbbf24';
                 
@@ -726,12 +836,30 @@
                 
                 const data = await response.json();
                 
+                // Log the event
+                const now = new Date();
+                const timeString = now.toLocaleTimeString();
+                dispatchEvents.unshift({
+                    time: timeString,
+                    evs_dispatched: data.evs_dispatched,
+                    power_kw: data.total_power_kw,
+                    revenue: data.total_revenue
+                });
+                
+                // Keep only last 10 events
+                if (dispatchEvents.length > 10) {
+                    dispatchEvents.pop();
+                }
+                
                 resultDiv.innerHTML = `
                     ✅ <strong>V2G Dispatched: ${data.evs_dispatched} EVs</strong><br>
                     Power: ${data.total_power_kw.toFixed(1)} kW<br>
                     Revenue: $${data.total_revenue.toFixed(2)}<br>
                     <small style="color: #9ca3af;">Auto-refreshing in 1 second...</small>
                 `;
+                
+                // Update events display
+                displayEvents();
                 
                 // Auto-refresh
                 setTimeout(() => {
@@ -741,6 +869,7 @@
                 }, 1000);
                 
             } catch (error) {
+                resultDiv.style.display = 'block';
                 resultDiv.textContent = '❌ V2G dispatch failed: ' + error.message;
                 resultDiv.style.color = '#ef4444';
             }
@@ -752,6 +881,7 @@
             loadEVList();
             loadRevenue();
             loadSchedule();
+            displayEvents();
         }
 
         // Initial load

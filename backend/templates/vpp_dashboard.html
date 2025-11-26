@@ -102,6 +102,32 @@
             transform: translateY(0);
         }
         
+        /* Notification Toast */
+        .notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+            animation: slideIn 0.3s ease-out;
+            z-index: 9999;
+            max-width: 400px;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
         /* Main Container */
         .container {
             max-width: 1600px;
@@ -295,6 +321,33 @@
             margin-bottom: 10px;
             border-left: 3px solid #10b981;
             font-size: 13px;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        .event-item.new {
+            animation: highlightNew 1s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes highlightNew {
+            0% {
+                background: rgba(16, 185, 129, 0.2);
+                border-left-width: 5px;
+            }
+            100% {
+                background: rgba(15, 20, 25, 0.5);
+                border-left-width: 3px;
+            }
         }
         
         .event-time {
@@ -390,6 +443,40 @@
             </div>
         </div>
 
+        <!-- Autonomous Mode Control -->
+        <div class="panel" style="margin-bottom: 30px; border: 2px solid #fbbf24;">
+            <div class="panel-title">
+                🤖 Autonomous Mode
+                <span style="font-size: 12px; margin-left: 10px; color: #ef4444;" id="autoStatus">● STOPPED</span>
+                <span style="font-size: 12px; margin-left: 10px; color: #60a5fa;" id="autoSpeed"></span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 15px;">
+                <div>
+                    <div style="font-size: 12px; color: #9ca3af; margin-bottom: 4px;">Grid Frequency</div>
+                    <div style="font-size: 32px; font-weight: 700; color: #fbbf24;" id="autoFrequency">50.000 Hz</div>
+                </div>
+                <div>
+                    <div style="font-size: 12px; color: #9ca3af; margin-bottom: 4px;">Frequency Status</div>
+                    <div style="font-size: 32px; font-weight: 700; color: #10b981;" id="autoFreqStatus">NORMAL</div>
+                </div>
+                <div>
+                    <div style="font-size: 12px; color: #9ca3af; margin-bottom: 4px;">Simulated Time</div>
+                    <div style="font-size: 20px; font-weight: 700; color: #9ca3af;" id="autoSimTime">--:--</div>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <button class="btn btn-primary btn-full" onclick="startAutonomous()">
+                    ▶️ Start Autonomous Mode
+                </button>
+                <button class="btn btn-secondary btn-full" onclick="stopAutonomous()">
+                    ⏸️ Stop Autonomous Mode
+                </button>
+            </div>
+            <div style="margin-top: 12px; padding: 12px; background: rgba(251, 191, 36, 0.1); border-radius: 6px; font-size: 13px; color: #9ca3af;">
+                System will automatically respond to grid frequency events and execute arbitrage strategies
+            </div>
+        </div>
+
         <!-- Two Column Layout -->
         <div class="two-col">
             <!-- Fleet Capacity Chart -->
@@ -447,6 +534,30 @@
     <script>
         const API_BASE = '/api/vpp';
         let capacityChart = null;
+        let lastEventCount = 0;
+        let autonomousInterval = null;
+
+        // Show notification toast
+        function showNotification(message) {
+            const existingNotifications = document.querySelectorAll('.notification');
+            if (existingNotifications.length >= 3) {
+                existingNotifications[0].remove();
+            }
+            
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = '⚡ ' + message;
+            
+            const notificationCount = document.querySelectorAll('.notification').length;
+            notification.style.top = (80 + (notificationCount * 70)) + 'px';
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.animation = 'slideIn 0.3s ease-out reverse';
+                setTimeout(() => notification.remove(), 300);
+            }, 4000);
+        }
 
         // Load fleet status
         async function loadFleetStatus() {
@@ -500,25 +611,35 @@
             });
         }
 
-        // Load locations
+        // Load locations - FIXED with defensive property access
         async function loadLocations() {
             try {
                 const locations = await fetch(`${API_BASE}/batteries/location`).then(r => r.json());
                 const list = document.getElementById('locationsList');
                 
-                list.innerHTML = Object.entries(locations).map(([city, data]) => `
-                    <div class="location-item">
-                        <div class="location-name">${city}</div>
-                        <div class="location-stats">
-                            <div><strong>${data.count}</strong> batteries</div>
-                            <div><strong>${data.total_capacity.toFixed(0)}</strong> kWh</div>
-                            <div><strong>${data.available_energy.toFixed(0)}</strong> kWh avail</div>
+                console.log('Locations data:', locations); // Debug
+                
+                list.innerHTML = Object.entries(locations).map(([city, data]) => {
+                    // Handle both property name formats defensively
+                    const totalCapacity = data.total_capacity_kwh ?? data.total_capacity ?? 0;
+                    const availableCapacity = data.available_capacity_kwh ?? data.available_energy ?? 0;
+                    const count = data.count ?? 0;
+                    
+                    return `
+                        <div class="location-item">
+                            <div class="location-name">${city}</div>
+                            <div class="location-stats">
+                                <div><strong>${count}</strong> batteries</div>
+                                <div><strong>${totalCapacity.toFixed(0)}</strong> kWh</div>
+                                <div><strong>${availableCapacity.toFixed(0)}</strong> kWh avail</div>
+                            </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
                 
             } catch (error) {
                 console.error('Failed to load locations:', error);
+                document.getElementById('locationsList').innerHTML = '<div style="color: #ef4444; padding: 20px; text-align: center;">Error loading locations</div>';
             }
         }
 
@@ -543,8 +664,23 @@
                     return;
                 }
                 
-                list.innerHTML = data.events.map(event => `
-                    <div class="event-item">
+                // Check for new events
+                if (data.events.length > lastEventCount) {
+                    const latestEvent = data.events[0];
+                    
+                    if (latestEvent.reason && (
+                        latestEvent.reason.includes('FCAS') || 
+                        latestEvent.reason.includes('Arbitrage') ||
+                        latestEvent.reason.includes('frequency')
+                    )) {
+                        showNotification(`${latestEvent.reason} • ${latestEvent.batteries_dispatched} batteries • $${latestEvent.revenue.toFixed(2)}`);
+                    }
+                    
+                    lastEventCount = data.events.length;
+                }
+                
+                list.innerHTML = data.events.map((event, index) => `
+                    <div class="event-item ${index === 0 ? 'new' : ''}">
                         <div class="event-time">${new Date(event.timestamp).toLocaleTimeString()}</div>
                         <div class="event-details">
                             ${event.reason} • ${event.batteries_dispatched} batteries • ${event.total_power_kw.toFixed(0)} kW • $${event.revenue.toFixed(2)}
@@ -554,6 +690,128 @@
                 
             } catch (error) {
                 console.error('Failed to load events:', error);
+            }
+        }
+
+        // Start autonomous mode
+        async function startAutonomous() {
+            try {
+                console.log('Starting autonomous mode...');
+                const response = await fetch('/api/autonomous/start', {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Start response:', data);
+                
+                if (data && (data.status === 'started' || data.status === 'already_running' || data.message === 'Autonomous VPP already running')) {
+                    document.getElementById('autoStatus').textContent = '● RUNNING';
+                    document.getElementById('autoStatus').style.color = '#10b981';
+                    
+                    if (data.status === 'started') {
+                        showNotification('Autonomous mode started - monitoring frequency');
+                    } else {
+                        showNotification('Autonomous mode already running');
+                    }
+                    
+                    if (!autonomousInterval) {
+                        autonomousInterval = setInterval(() => {
+                            loadAutonomousStatus();
+                            loadEvents();
+                        }, 3000);
+                    }
+                } else {
+                    throw new Error('Unexpected response: ' + JSON.stringify(data));
+                }
+            } catch (error) {
+                console.error('Failed to start autonomous mode:', error);
+                showNotification('Error: ' + error.message);
+            }
+        }
+
+        // Stop autonomous mode
+        async function stopAutonomous() {
+            try {
+                console.log('Stopping autonomous mode...');
+                const response = await fetch('/api/autonomous/stop', {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Stop response:', data);
+                
+                if (data && data.status === 'stopped') {
+                    document.getElementById('autoStatus').textContent = '● STOPPED';
+                    document.getElementById('autoStatus').style.color = '#ef4444';
+                    
+                    showNotification('Autonomous mode stopped');
+                    
+                    if (autonomousInterval) {
+                        clearInterval(autonomousInterval);
+                        autonomousInterval = null;
+                    }
+                } else {
+                    throw new Error('Unexpected response format');
+                }
+            } catch (error) {
+                console.error('Failed to stop autonomous mode:', error);
+                showNotification('Error stopping autonomous mode: ' + error.message);
+            }
+        }
+
+        // Load autonomous status
+        async function loadAutonomousStatus() {
+            try {
+                const status = await fetch('/api/autonomous/status').then(r => r.json());
+                
+                if (status.running) {
+                    document.getElementById('autoStatus').textContent = '● RUNNING';
+                    document.getElementById('autoStatus').style.color = '#10b981';
+                    
+                    const speed = status.speed_multiplier || 1;
+                    if (speed > 1) {
+                        document.getElementById('autoSpeed').textContent = `⚡ ${speed}x SPEED`;
+                        document.getElementById('autoSpeed').style.display = 'inline';
+                    } else {
+                        document.getElementById('autoSpeed').style.display = 'none';
+                    }
+                    
+                    document.getElementById('autoFrequency').textContent = status.current_frequency_hz.toFixed(3) + ' Hz';
+                    
+                    if (status.simulated_time) {
+                        const simTime = new Date(status.simulated_time);
+                        const hours = simTime.getHours().toString().padStart(2, '0');
+                        const minutes = simTime.getMinutes().toString().padStart(2, '0');
+                        document.getElementById('autoSimTime').textContent = `${hours}:${minutes}`;
+                    }
+                    
+                    const freqStatus = status.frequency_status.toUpperCase();
+                    const freqElem = document.getElementById('autoFreqStatus');
+                    freqElem.textContent = freqStatus;
+                    
+                    if (freqStatus === 'NORMAL') {
+                        freqElem.style.color = '#10b981';
+                    } else if (freqStatus === 'WARNING') {
+                        freqElem.style.color = '#fbbf24';
+                    } else {
+                        freqElem.style.color = '#ef4444';
+                    }
+                } else {
+                    document.getElementById('autoStatus').textContent = '● STOPPED';
+                    document.getElementById('autoStatus').style.color = '#9ca3af';
+                    document.getElementById('autoSpeed').style.display = 'none';
+                    document.getElementById('autoSimTime').textContent = '--:--';
+                }
+            } catch (error) {
+                console.error('Failed to load autonomous status:', error);
             }
         }
 
@@ -586,7 +844,8 @@
                     <small style="color: #9ca3af;">Auto-refreshing in 1 second...</small>
                 `;
                 
-                // Auto-refresh after 1 second
+                showNotification(`Dispatched ${data.batteries_dispatched} batteries - $${data.revenue.toFixed(2)}`);
+                
                 setTimeout(() => {
                     loadFleetStatus();
                     loadEvents();
@@ -603,12 +862,11 @@
         async function simulateFCAS() {
             const resultDiv = document.getElementById('dispatchResult');
             
-            // Generate extreme frequencies to trigger response
             let frequency;
             if (Math.random() > 0.5) {
-                frequency = 49.85 + Math.random() * 0.07; // Low frequency event
+                frequency = 49.85 + Math.random() * 0.07;
             } else {
-                frequency = 50.08 + Math.random() * 0.07; // High frequency event
+                frequency = 50.08 + Math.random() * 0.07;
             }
             
             try {
@@ -640,9 +898,10 @@
                         Revenue: $${data.revenue.toFixed(2)}
                     `;
                     resultDiv.style.color = '#10b981';
+                    
+                    showNotification(`FCAS ${data.action} - ${data.batteries_dispatched} batteries - $${data.revenue.toFixed(2)}`);
                 }
                 
-                // Refresh data
                 setTimeout(() => {
                     loadFleetStatus();
                     loadEvents();
@@ -659,11 +918,20 @@
             loadFleetStatus();
             loadLocations();
             loadRevenue();
+            loadAutonomousStatus();
             loadEvents();
         }
 
         // Initial load
         refreshAll();
+        
+        setTimeout(() => {
+            fetch(`${API_BASE}/dispatch-history?limit=10`)
+                .then(r => r.json())
+                .then(data => {
+                    lastEventCount = data.events.length;
+                });
+        }, 1000);
     </script>
 </body>
 </html>
