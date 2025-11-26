@@ -213,6 +213,10 @@ def create_table():
     except Exception as e:
         print(f"Error creating table: {e}")
 
+# ============================================================================
+# SINGLE HOME ROUTES
+# ============================================================================
+
 @app.route('/')
 def index():
     ensure_data_exists()
@@ -388,6 +392,210 @@ def recommendations():
     recs = optimizer.optimize_battery_schedule(solar_forecast, consumption_forecast)
     
     return jsonify({'recommendations': recs})
+
+# ============================================================================
+# VPP DASHBOARD ROUTES
+# ============================================================================
+
+# Initialize VPP system (lazy load)
+_vpp_aggregator = None
+_autonomous_vpp = None
+
+# Demo speed multiplier (set via environment variable)
+DEMO_SPEED = int(os.environ.get('DEMO_SPEED', '30'))  # Default: 1x (realtime)
+# For demos: Set DEMO_SPEED=60 for 60x faster time
+
+def get_vpp():
+    """Get or initialize VPP aggregator"""
+    global _vpp_aggregator
+    if _vpp_aggregator is None:
+        from vpp_aggregator import VPPAggregator
+        _vpp_aggregator = VPPAggregator(db_path=DB_PATH)
+    return _vpp_aggregator
+
+def get_autonomous():
+    """Get or initialize autonomous VPP"""
+    global _autonomous_vpp
+    if _autonomous_vpp is None:
+        from autonomous_vpp import AutonomousVPP
+        _autonomous_vpp = AutonomousVPP(get_vpp(), speed_multiplier=DEMO_SPEED)
+    return _autonomous_vpp
+
+@app.route('/vpp-dashboard')
+def vpp_dashboard():
+    """VPP Control Center Dashboard"""
+    return render_template('vpp_dashboard.html')
+
+@app.route('/api/vpp/fleet-status', methods=['GET'])
+def vpp_fleet_status():
+    """Get current fleet status"""
+    vpp = get_vpp()
+    status = vpp.get_fleet_status()
+    return jsonify(status)
+
+@app.route('/api/vpp/batteries/list', methods=['GET'])
+def vpp_batteries_list():
+    """Get list of all batteries"""
+    vpp = get_vpp()
+    batteries = vpp.get_batteries_list()
+    return jsonify({'batteries': batteries})
+
+@app.route('/api/vpp/batteries/location', methods=['GET'])
+def vpp_batteries_location():
+    """Get batteries grouped by location"""
+    vpp = get_vpp()
+    locations = vpp.get_batteries_by_location()
+    return jsonify(locations)
+
+@app.route('/api/vpp/dispatch', methods=['POST'])
+def vpp_dispatch():
+    """Dispatch batteries for power requirement"""
+    data = request.get_json()
+    required_power = data.get('required_power_kw', 250)
+    reason = data.get('reason', 'Manual dispatch')
+    
+    vpp = get_vpp()
+    result = vpp.dispatch_batteries(required_power, reason)
+    return jsonify(result)
+
+@app.route('/api/vpp/fcas-event', methods=['POST'])
+def vpp_fcas_event():
+    """Simulate FCAS frequency response event"""
+    data = request.get_json()
+    frequency = data.get('frequency_hz', 50.0)
+    
+    vpp = get_vpp()
+    result = vpp.simulate_fcas_event(frequency)
+    return jsonify(result)
+
+@app.route('/api/vpp/revenue', methods=['GET'])
+def vpp_revenue():
+    """Get daily revenue calculations"""
+    vpp = get_vpp()
+    revenue = vpp.calculate_daily_revenue()
+    return jsonify(revenue)
+
+@app.route('/api/vpp/dispatch-history', methods=['GET'])
+def vpp_dispatch_history():
+    """Get recent dispatch events"""
+    limit = request.args.get('limit', 10, type=int)
+    vpp = get_vpp()
+    events = vpp.get_recent_dispatch_events(limit)
+    return jsonify({'events': events})
+
+@app.route('/api/grid/status', methods=['GET'])
+def grid_status():
+    """Get current grid status from AEMO"""
+    vpp = get_vpp()
+    status = vpp.get_grid_status()
+    return jsonify(status)
+
+@app.route('/api/grid/regions', methods=['GET'])
+def grid_regions():
+    """Get prices for all regions"""
+    vpp = get_vpp()
+    regions = vpp.get_all_regions()
+    return jsonify(regions)
+
+@app.route('/api/autonomous/start', methods=['POST'])
+def autonomous_start():
+    """Start autonomous VPP mode"""
+    auto = get_autonomous()
+    
+    # Check if already running
+    status = auto.get_status()
+    if status.get('running', False):
+        return jsonify({
+            'status': 'already_running',
+            'message': 'Autonomous VPP already running'
+        })
+    
+    result = auto.start()
+    return jsonify(result)
+
+@app.route('/api/autonomous/stop', methods=['POST'])
+def autonomous_stop():
+    """Stop autonomous VPP mode"""
+    auto = get_autonomous()
+    result = auto.stop()
+    return jsonify(result)
+
+@app.route('/api/autonomous/status', methods=['GET'])
+def autonomous_status():
+    """Get autonomous VPP status"""
+    auto = get_autonomous()
+    status = auto.get_status()
+    return jsonify(status)
+
+# ============================================================================
+# EV FLEET ROUTES
+# ============================================================================
+
+# Initialize EV fleet (lazy load)
+_ev_fleet = None
+
+def get_ev_fleet():
+    """Get or initialize EV fleet"""
+    global _ev_fleet
+    if _ev_fleet is None:
+        from ev_fleet import EVFleet
+        _ev_fleet = EVFleet(25)
+        print("✅ EV Fleet initialized (25 vehicles)")
+    return _ev_fleet
+
+@app.route('/ev-dashboard')
+def ev_dashboard():
+    """EV Fleet Control Dashboard"""
+    return render_template('ev_dashboard.html')
+
+@app.route('/api/ev/fleet-status', methods=['GET'])
+def ev_fleet_status():
+    """Get current EV fleet status"""
+    fleet = get_ev_fleet()
+    status = fleet.get_fleet_status()
+    return jsonify(status)
+
+@app.route('/api/ev/all', methods=['GET'])
+def ev_all():
+    """Get list of all EVs"""
+    fleet = get_ev_fleet()
+    evs = fleet.get_all_evs()
+    return jsonify(evs)
+
+@app.route('/api/ev/by-status', methods=['GET'])
+def ev_by_status():
+    """Get EVs grouped by status"""
+    fleet = get_ev_fleet()
+    status_groups = fleet.get_evs_by_status()
+    return jsonify(status_groups)
+
+@app.route('/api/ev/dispatch', methods=['POST'])
+def ev_dispatch():
+    """Dispatch EVs for V2G discharge"""
+    data = request.get_json()
+    required_power = data.get('required_power_kw', 100)
+    
+    fleet = get_ev_fleet()
+    result = fleet.dispatch_v2g(required_power)
+    return jsonify(result)
+
+@app.route('/api/ev/revenue', methods=['GET'])
+def ev_revenue():
+    """Get daily revenue calculations"""
+    fleet = get_ev_fleet()
+    revenue = fleet.calculate_daily_revenue()
+    return jsonify(revenue)
+
+@app.route('/api/ev/schedule', methods=['GET'])
+def ev_schedule():
+    """Get smart charging schedule for next 24 hours"""
+    fleet = get_ev_fleet()
+    schedule = fleet.smart_charging_schedule()
+    return jsonify(schedule)
+
+# ============================================================================
+# DEBUG ROUTES
+# ============================================================================
 
 @app.route('/api/debug/regenerate', methods=['POST'])
 def force_regenerate():
