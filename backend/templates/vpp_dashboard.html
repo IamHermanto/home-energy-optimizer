@@ -438,8 +438,12 @@
                 <div class="stat-value" id="dispatchablePower">--</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Daily Revenue</div>
+                <div class="stat-label">Daily Revenue (Fleet)</div>
                 <div class="stat-value" id="dailyRevenue">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Per Household/Year</div>
+                <div class="stat-value" id="perHousehold">--</div>
             </div>
         </div>
 
@@ -648,6 +652,7 @@
             try {
                 const revenue = await fetch(`${API_BASE}/revenue`).then(r => r.json());
                 document.getElementById('dailyRevenue').textContent = '$' + revenue.total_daily_revenue.toFixed(2);
+                document.getElementById('perHousehold').textContent = '$' + revenue.revenue_per_household_annual.toLocaleString() + '/yr';
             } catch (error) {
                 console.error('Failed to load revenue:', error);
             }

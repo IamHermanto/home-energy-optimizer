@@ -199,8 +199,13 @@ class BatteryFleet:
         else:  # north (best)
             peak_hour = 12
         
-        # Calculate output based on distance from peak
+        # Calculate output based on distance from peak (using normalization)
+        # At peak hour (e.g., noon for north-facing): hour_angle = 0
+        # 3 hours before/after peak: hour_angle = ±0.5
+        # 6 hours away: hour_angle = ±1.0
         hour_angle = (hour - peak_hour) / 6
+        
+        # Bell-curve formula (NOT LINEAR)
         output = capacity_kw * np.cos(hour_angle * np.pi / 2) ** 2
         
         # Add randomness (clouds)

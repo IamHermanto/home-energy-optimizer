@@ -470,9 +470,15 @@ def vpp_fcas_event():
 @app.route('/api/vpp/revenue', methods=['GET'])
 def vpp_revenue():
     """Get daily revenue calculations"""
-    vpp = get_vpp()
-    revenue = vpp.calculate_daily_revenue()
-    return jsonify(revenue)
+    try:
+        vpp = get_vpp()
+        revenue = vpp.calculate_daily_revenue()
+        return jsonify(revenue)
+    except Exception as e:
+        import traceback
+        print(f"ERROR in vpp_revenue: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 @app.route('/api/vpp/dispatch-history', methods=['GET'])
 def vpp_dispatch_history():
@@ -522,9 +528,15 @@ def autonomous_stop():
 @app.route('/api/autonomous/status', methods=['GET'])
 def autonomous_status():
     """Get autonomous VPP status"""
-    auto = get_autonomous()
-    status = auto.get_status()
-    return jsonify(status)
+    try:
+        auto = get_autonomous()
+        status = auto.get_status()
+        return jsonify(status)
+    except Exception as e:
+        import traceback
+        print(f"ERROR in autonomous_status: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 # ============================================================================
 # EV FLEET ROUTES
